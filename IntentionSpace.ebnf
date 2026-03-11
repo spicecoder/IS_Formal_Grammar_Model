@@ -1,0 +1,324 @@
+(* ============================================================================ *)
+(* INTENTION SPACE FORMAL GRAMMAR v1.1                                          *)
+(* Based on: V1.1-IntentionSpaceExtendedFormalModel.md                          *)
+(* Authors: Pronab Pal, Intentix Lab                                            *)
+(* License: Academic/Research Use                                               *)
+(* ============================================================================ *)
+
+(* ----------------------------------------------------------------------------
+   1. LEXICAL ELEMENTS
+   ---------------------------------------------------------------------------- *)
+
+(* Basic character classes *)
+letter        = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" 
+              | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" 
+              | "U" | "V" | "W" | "X" | "Y" | "Z"
+              | "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" 
+              | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" 
+              | "u" | "v" | "w" | "x" | "y" | "z" ;
+
+digit         = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+
+hex_digit     = digit | "a" | "b" | "c" | "d" | "e" | "f" 
+              | "A" | "B" | "C" | "D" | "E" | "F" ;
+
+alphanumeric  = letter | digit | "_" | "-" ;
+
+(* Whitespace *)
+ws            = { " " | "\t" | "\n" | "\r" } ;
+
+(* JSON string literal *)
+string        = '"' , { character - '"' } , '"' ;
+
+character     = letter | digit | ws | punctuation | unicode_escape ;
+
+punctuation   = "!" | "#" | "$" | "%" | "&" | "'" | "(" | ")" | "*" | "+" 
+              | "," | "-" | "." | "/" | ":" | ";" | "<" | "=" | ">" | "?" 
+              | "@" | "[" | "\\" | "]" | "^" | "_" | "`" | "{" | "|" | "}" 
+              | "~" ;
+
+unicode_escape = "\\u" , hex_digit , hex_digit , hex_digit , hex_digit ;
+
+(* Numbers *)
+number        = integer | float ;
+
+integer       = ["-"] , digit , { digit } ;
+
+float         = ["-"] , digit , { digit } , "." , digit , { digit } 
+              | ["-"] , digit , { digit } , ("e" | "E") , ["+" | "-"] , digit , { digit }
+              | ["-"] , digit , { digit } , "." , digit , { digit } , ("e" | "E") , ["+" | "-"] , digit , { digit } ;
+
+(* Hash: 64-character hex string (SHA256) *)
+hash          = '"' , 64 * hex_digit , '"' ;
+
+(* Trivalence: Core three-valued logic *)
+trivalence    = '"Y"' | '"N"' | '"UN"' ;
+
+(* Name: Identifier for Pulses, Units, etc. *)
+name          = letter , { alphanumeric } ;
+
+(* ----------------------------------------------------------------------------
+   2. PULSE (Atomic State Unit) - Section 3.1
+   P = (n: Name, r: Value ∪ {⊥}, tv: Trivalence)
+   Axiom 3.1.1: Pulse Immutability
+   ---------------------------------------------------------------------------- *)
+
+pulse         = "{" , ws , 
+                  pulse_name_field , "," , ws , 
+                  pulse_tv_field ,
+                  [ "," , ws , pulse_r_field ] ,
+                ws , "}" ;
+
+pulse_name_field = '"n"' , ws , ":" , ws , string ;
+
+pulse_tv_field   = '"tv"' , ws , ":" , ws , trivalence ;
+
+pulse_r_field    = '"r"' , ws , ":" , ws , value ;
+
+(* Value: Any serializable value or null (⊥) *)
+value         = string | number | "null" | array | object ;
+
+array         = "[" , ws , [ value , { "," , ws , value } , ws ] , "]" ;
+
+object        = "{" , ws , [ member , { "," , ws , member } , ws ] , "}" ;
+
+member        = string , ws , ":" , ws , value ;
+
+(* ----------------------------------------------------------------------------
+   3. RESPONSE WITH LINEAGE - Section 3.2
+   R = (v: Value, λ: [Name])
+   Axiom 3.2.1: Lineage Monotonicity
+   ---------------------------------------------------------------------------- *)
+
+response      = "{" , ws ,
+                  response_v_field , "," , ws ,
+                  response_lambda_field ,
+                ws , "}" ;
+
+response_v_field      = '"v"' , ws , ":" , ws , value ;
+
+response_lambda_field = '"λ"' , ws , ":" , ws , name_array ;
+
+name_array    = "[" , ws , [ string , { "," , ws , string } , ws ] , "]" ;
+
+(* ----------------------------------------------------------------------------
+   4. SIGNAL (Intention-Pulse Pair) - Section 3.3
+   Σ = (ι: IntentionLabel, Π: Set(Pulse), η: Hash)
+   Axiom 3.3.1: Signal Immutability
+   Axiom 3.3.2: Signal Identity
+   ---------------------------------------------------------------------------- *)
+
+signal        = "{" , ws ,
+                  signal_iota_field , "," , ws ,
+                  signal_pi_field , "," , ws ,
+                  signal_eta_field ,
+                ws , "}" ;
+
+signal_iota_field = '"ι"' , ws , ":" , ws , string ;  (* Intention label *)
+
+signal_pi_field   = '"Π"' , ws , ":" , ws , pulse_array ;  (* Set of Pulses *)
+
+signal_eta_field  = '"η"' , ws , ":" , ws , hash ;  (* SHA256 hash *)
+
+pulse_array   = "[" , ws , [ pulse , { "," , ws , pulse } , ws ] , "]" ;
+
+(* ----------------------------------------------------------------------------
+   5. FIELD (Runtime State) - Section 3.4
+   Φ = (π: Name ⇀ Trivalence, ρ: Name ⇀ Response, ν: ℕ)
+   ---------------------------------------------------------------------------- *)
+
+field         = "{" , ws ,
+                  field_pi_field , "," , ws ,
+                  field_rho_field , "," , ws ,
+                  field_nu_field ,
+                ws , "}" ;
+
+field_pi_field  = '"π"' , ws , ":" , ws , trivalence_map ;  (* pulse name -> trivalence *)
+
+field_rho_field = '"ρ"' , ws , ":" , ws , response_map ;    (* pulse name -> response *)
+
+field_nu_field  = '"ν"' , ws , ":" , ws , integer ;         (* version counter *)
+
+trivalence_map  = "{" , ws , [ trivalence_entry , { "," , ws , trivalence_entry } , ws ] , "}" ;
+
+trivalence_entry = string , ws , ":" , ws , trivalence ;
+
+response_map    = "{" , ws , [ response_entry , { "," , ws , response_entry } , ws ] , "}" ;
+
+response_entry   = string , ws , ":" , ws , response ;
+
+(* ----------------------------------------------------------------------------
+   6. RTM (Relational Transfer Matrix) - Section 4
+   ℳ = (src: Name ∪ Set(Name), dst: Name ∪ Set(Name), τ: Transform, φ: Guard)
+   ---------------------------------------------------------------------------- *)
+
+rtm           = "{" , ws ,
+                  rtm_src_field , "," , ws ,
+                  rtm_dst_field , "," , ws ,
+                  rtm_tau_field , "," , ws ,
+                  rtm_phi_field ,
+                ws , "}" ;
+
+rtm_src_field = '"src"' , ws , ":" , ws , name_or_set ;
+
+rtm_dst_field = '"dst"' , ws , ":" , ws , name_or_set ;
+
+rtm_tau_field = '"τ"' , ws , ":" , ws , transform ;
+
+rtm_phi_field = '"φ"' , ws , ":" , ws , guard ;
+
+name_or_set   = string | string_set ;
+
+string_set    = "[" , ws , [ string , { "," , ws , string } , ws ] , "]" ;
+
+transform     = '"identity"' | '"sum"' | '"count"' | '"filter"' | custom_func ;
+
+guard         = '"always"' | '"never"' | conditional ;
+
+custom_func   = string ;  (* Reference to custom transformation function *)
+
+conditional   = string ;  (* Condition expression, e.g., "pulse_name=Y" *)
+
+(* ----------------------------------------------------------------------------
+   7. DESIGN NODE (DN) - Section 5.1
+   DN = (id, Σ_in, Σ_out, δ, τ_mode, μ)
+   Constraints: C5.1.1, C5.1.2, C5.1.3
+   ---------------------------------------------------------------------------- *)
+
+design_node   = "{" , ws ,
+                  dn_id_field , "," , ws ,
+                  dn_sigma_in_field , "," , ws ,
+                  dn_sigma_out_field , "," , ws ,
+                  dn_tau_mode_field ,
+                  [ "," , ws , dn_mu_field ] ,
+                ws , "}" ;
+
+dn_id_field         = '"id"' , ws , ":" , ws , string ;
+
+dn_sigma_in_field   = '"Σ_in"' , ws , ":" , ws , signal ;
+
+dn_sigma_out_field  = '"Σ_out"' , ws , ":" , ws , signal ;
+
+dn_tau_mode_field   = '"τ_mode"' , ws , ":" , ws , firing_mode ;
+
+dn_mu_field         = '"μ"' , ws , ":" , ws , rtm_array ;  (* Optional internal RTMs *)
+
+firing_mode         = '"once"' | '"repeat"' ;
+
+rtm_array           = "[" , ws , [ rtm , { "," , ws , rtm } , ws ] , "]" ;
+
+(* ----------------------------------------------------------------------------
+   8. OBJECT - Section 5.2
+   O = (id, Σ_in, ℳ_O, Σ_tpl, ρ_err)
+   Axiom 5.2.1: Object Purity
+   ---------------------------------------------------------------------------- *)
+
+object_def    = "{" , ws ,
+                  obj_id_field , "," , ws ,
+                  obj_sigma_in_field , "," , ws ,
+                  obj_mo_field , "," , ws ,
+                  obj_sigma_tpl_field , "," , ws ,
+                  obj_rho_err_field ,
+                ws , "}" ;
+
+obj_id_field        = '"id"' , ws , ":" , ws , string ;
+
+obj_sigma_in_field  = '"Σ_in"' , ws , ":" , ws , signal ;
+
+obj_mo_field        = '"ℳ_O"' , ws , ":" , ws , rtm_set ;  (* Set of RTMs *)
+
+obj_sigma_tpl_field = '"Σ_tpl"' , ws , ":" , ws , signal ;  (* Output template *)
+
+obj_rho_err_field   = '"ρ_err"' , ws , ":" , ws , boolean ;  (* Error on match flag *)
+
+rtm_set             = "[" , ws , [ rtm , { "," , ws , rtm } , ws ] , "]" ;
+
+boolean             = "true" | "false" ;
+
+(* ----------------------------------------------------------------------------
+   9. COORDINATE - Section 7
+   α = (u, o, t, σ, ι, π, κ)
+   Theorem 7.3.1: Uniqueness, Theorem 7.4.1: Granularity
+   ---------------------------------------------------------------------------- *)
+
+coordinate    = "{" , ws ,
+                  coord_u_field , "," , ws ,
+                  coord_o_field , "," , ws ,
+                  coord_t_field , "," , ws ,
+                  coord_sigma_field , "," , ws ,
+                  coord_iota_field , "," , ws ,
+                  coord_pi_field , "," , ws ,
+                  coord_kappa_field ,
+                ws , "}" ;
+
+coord_u_field     = '"u"' , ws , ":" , ws , string ;  (* User ID *)
+
+coord_o_field     = '"o"' , ws , ":" , ws , string ;  (* Operator ID *)
+
+coord_t_field     = '"t"' , ws , ":" , ws , number ;  (* Timestamp *)
+
+coord_sigma_field = '"σ"' , ws , ":" , ws , path ;    (* Path: sequence of unit IDs *)
+
+coord_iota_field  = '"ι"' , ws , ":" , ws , string ;  (* Intention label *)
+
+coord_pi_field    = '"π"' , ws , ":" , ws , trivalence_map ;  (* Pulse state snapshot *)
+
+coord_kappa_field = '"κ"' , ws , ":" , ws , integer ;  (* Step index *)
+
+path              = "[" , ws , [ string , { "," , ws , string } , ws ] , "]" ;
+
+(* ----------------------------------------------------------------------------
+   10. ERROR SIGNAL - Section 11
+   Σ_err = (ι_err, Π_err, η_err, λ_cause)
+   Axiom 11.2.1: Error Signal Immutability
+   ---------------------------------------------------------------------------- *)
+
+error_signal  = "{" , ws ,
+                  err_iota_field , "," , ws ,
+                  err_pi_field , "," , ws ,
+                  err_eta_field , "," , ws ,
+                  err_lambda_field ,
+                ws , "}" ;
+
+err_iota_field  = '"ι_err"' , ws , ":" , ws , string ;  (* Error intention label *)
+
+err_pi_field    = '"Π_err"' , ws , ":" , ws , pulse_array ;  (* Error metadata pulses *)
+
+err_eta_field   = '"η_err"' , ws , ":" , ws , hash ;  (* Error hash *)
+
+err_lambda_field = '"λ_cause"' , ws , ":" , ws , name_array ;  (* Causal chain *)
+
+(* ----------------------------------------------------------------------------
+   11. CPUX (Common Path of Understanding and Execution) - Section 5.3
+   CPUX = [U_1, U_2, ..., U_n] where U_i ∈ DN ∪ Object
+   ---------------------------------------------------------------------------- *)
+
+cpux          = "[" , ws , [ unit , { "," , ws , unit } , ws ] , "]" ;
+
+unit          = design_node | object_def ;
+
+(* ----------------------------------------------------------------------------
+   12. RECOVERY POLICY - Section 11.6
+   χ ∈ {PROPAGATE, SUPPRESS, RETRY, COMPENSATE}
+   ---------------------------------------------------------------------------- *)
+
+recovery_policy = '"PROPAGATE"' | '"SUPPRESS"' | '"RETRY"' | '"COMPENSATE"' ;
+
+retry_config  = "{" , ws ,
+                  '"max_attempts"' , ws , ":" , ws , integer , "," , ws ,
+                  '"backoff_ms"' , ws , ":" , ws , integer ,
+                ws , "}" ;
+
+(* ----------------------------------------------------------------------------
+   13. ROOT ELEMENTS (Entry points for generation)
+   ---------------------------------------------------------------------------- *)
+
+root          = pulse | signal | field | rtm | design_node | object_def 
+              | coordinate | error_signal | cpux ;
+
+(* Special roots for specific generation tasks *)
+pulse_root    = pulse ;
+signal_root   = signal ;
+rtm_root      = rtm ;
+coordinate_root = coordinate ;
+cpux_root     = cpux ;
